@@ -4,7 +4,7 @@ Youtube Search API is an API for getting Youtube search results.
 
 > ℹ️ **Informations**
 > 
-> - Fork requis pour mes projets personnels car ils ne supportent pas Axios qui est donc remplacé par node-fetch.
+> - Fork requis pour mes projets personnels car ils ne supportent pas Axios qui est donc remplacé par le module https de node.
 > - Je ne suis **pas l’auteur** original de ce code. 
 > - Retrouvez le GitHub original : <a href="https://github.com/damonwonghv/youtube-search-api" target="_blank">damonwonghv/youtube-search-api</a>
 

@@ -1,4 +1,47 @@
-import fetch from 'node-fetch';
+import * as https from 'https';
+import * as http from 'http';
+import { URL } from 'url';
+
+// Helper function pour fetch avec https natif
+function fetchData(url: string, options?: any): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const protocol = urlObj.protocol === 'https:' ? https : http;
+    
+    const reqOptions = {
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      method: options?.method || 'GET',
+      headers: options?.headers || {}
+    };
+
+    const req = protocol.request(reqOptions, (res) => {
+      let data = '';
+      
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      res.on('end', () => {
+        resolve(data);
+      });
+    });
+
+    req.on('error', (err) => {
+      reject(err);
+    });
+
+    if (options?.body) {
+      req.write(options.body);
+    }
+
+    req.end();
+  });
+}
+
+function fetchJSON(url: string, options?: any): Promise<any> {
+  return fetchData(url, options).then(data => JSON.parse(data));
+}
 
 export class YouTubeAPIError extends Error {
   public readonly code: string;
@@ -48,12 +91,12 @@ export class ErrorHandler {
 
     if (error instanceof YouTubeAPIError) {
       youtubeError = error;
-    } else if (false /* previously axios.isAxiosError - replaced: treat as generic error */) {
+    } else if (error.response) {
       const statusCode = error.response?.status;
       const message = this.getErrorMessage(code, context, error.message);
       youtubeError = new YouTubeAPIError(message, code, statusCode, error);
     } else {
-      const message = this.getErrorMessage(code, context, error?.message || error?.toString() || '未知錯誤');
+      const message = this.getErrorMessage(code, context, error?.message || error?.toString() || 'Unknown error');
       youtubeError = new YouTubeAPIError(message, code, undefined, error);
     }
 
@@ -167,14 +210,13 @@ const GetYoutubeInitData = async (url: string): Promise<YoutubeInitData> => {
   let apiToken: string | null = null;
   let context: any = null;
   try {
-    const res = await fetch(encodeURI(url));
-    const page = { data: await res.text() };
-    const ytInitData = page.data.split("var ytInitialData =");
+    const pageData = await fetchData(encodeURI(url));
+    const ytInitData = pageData.split("var ytInitialData =");
     if (ytInitData && ytInitData.length > 1) {
       const data = ytInitData[1].split("</script>")[0].slice(0, -1);
 
-      if (page.data.split("innertubeApiKey").length > 1) {
-        const apiKeyPart = page.data.split("innertubeApiKey")[1];
+      if (pageData.split("innertubeApiKey").length > 1) {
+        const apiKeyPart = pageData.split("innertubeApiKey")[1];
         if (apiKeyPart) {
           apiToken = apiKeyPart
             .trim()
@@ -183,8 +225,8 @@ const GetYoutubeInitData = async (url: string): Promise<YoutubeInitData> => {
         }
       }
 
-      if (page.data.split("INNERTUBE_CONTEXT").length > 1) {
-        const contextPart = page.data.split("INNERTUBE_CONTEXT")[1];
+      if (pageData.split("INNERTUBE_CONTEXT").length > 1) {
+        const contextPart = pageData.split("INNERTUBE_CONTEXT")[1];
         if (contextPart) {
           context = JSON.parse(
             contextPart.trim().slice(2, -2)
@@ -216,9 +258,8 @@ const GetYoutubePlayerDetail = async (
 ): Promise<YoutubePlayerDetail> => {
   let initdata: any = {};
   try {
-    const res = await fetch(encodeURI(url));
-    const page = { data: await res.text() };
-    const ytInitData = page.data.split("var ytInitialPlayerResponse =");
+    const pageData = await fetchData(encodeURI(url));
+    const ytInitData = pageData.split("var ytInitialPlayerResponse =");
     if (ytInitData && ytInitData.length > 1) {
       const data = ytInitData[1].split("</script>")[0].slice(0, -1);
       initdata = JSON.parse(data);
@@ -342,11 +383,14 @@ const nextPage = async (
 ): Promise<SearchResult> => {
   const endpoint = `${youtubeEndpoint}/youtubei/v1/search?key=${nextPage.nextPageToken}`;
   try {
-    const page: any = await (await (await fetch(
-      encodeURI(endpoint), {method: 'POST', body: JSON.stringify(nextPage.nextPageContext
-    ), headers: {'Content-Type': 'application/json'}})).json());
+    const page: any = await fetchJSON(encodeURI(endpoint), {
+      method: 'POST',
+      body: JSON.stringify(nextPage.nextPageContext),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
     const item1 =
-      page.data.onResponseReceivedCommands[0].appendContinuationItemsAction;
+      page.onResponseReceivedCommands[0].appendContinuationItemsAction;
     let items: SearchItem[] = [];
     item1.continuationItems.forEach((conitem: any) => {
       if (conitem.itemSectionRenderer) {
