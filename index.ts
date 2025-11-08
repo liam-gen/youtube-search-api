@@ -1,6 +1,5 @@
-import axios, { AxiosResponse } from "axios";
+import fetch from 'node-fetch';
 
-// 自定義錯誤類別
 export class YouTubeAPIError extends Error {
   public readonly code: string;
   public readonly statusCode?: number;
@@ -15,7 +14,6 @@ export class YouTubeAPIError extends Error {
   }
 }
 
-// 錯誤代碼枚舉
 export enum ErrorCodes {
   NETWORK_ERROR = 'NETWORK_ERROR',
   INIT_DATA_ERROR = 'INIT_DATA_ERROR',
@@ -28,7 +26,6 @@ export enum ErrorCodes {
   UNKNOWN_ERROR = 'UNKNOWN_ERROR'
 }
 
-// 錯誤處理器
 export class ErrorHandler {
   private static instance: ErrorHandler;
   private errorLogger?: (error: YouTubeAPIError) => void;
@@ -51,7 +48,7 @@ export class ErrorHandler {
 
     if (error instanceof YouTubeAPIError) {
       youtubeError = error;
-    } else if (axios.isAxiosError(error)) {
+    } else if (false /* previously axios.isAxiosError - replaced: treat as generic error */) {
       const statusCode = error.response?.status;
       const message = this.getErrorMessage(code, context, error.message);
       youtubeError = new YouTubeAPIError(message, code, statusCode, error);
@@ -60,7 +57,6 @@ export class ErrorHandler {
       youtubeError = new YouTubeAPIError(message, code, undefined, error);
     }
 
-    // 記錄錯誤
     if (this.errorLogger) {
       this.errorLogger(youtubeError);
     } else {
@@ -92,7 +88,6 @@ export class ErrorHandler {
   }
 }
 
-// 全域錯誤處理器實例
 const errorHandler = ErrorHandler.getInstance();
 
 const youtubeEndpoint = `https://www.youtube.com`;
@@ -172,7 +167,8 @@ const GetYoutubeInitData = async (url: string): Promise<YoutubeInitData> => {
   let apiToken: string | null = null;
   let context: any = null;
   try {
-    const page: AxiosResponse<string> = await axios.get(encodeURI(url));
+    const res = await fetch(encodeURI(url));
+    const page = { data: await res.text() };
     const ytInitData = page.data.split("var ytInitialData =");
     if (ytInitData && ytInitData.length > 1) {
       const data = ytInitData[1].split("</script>")[0].slice(0, -1);
@@ -204,7 +200,6 @@ const GetYoutubeInitData = async (url: string): Promise<YoutubeInitData> => {
         `URL: ${url}`,
         ErrorCodes.INIT_DATA_ERROR
       );
-      // 這行永遠不會執行，因為 handleError 會拋出錯誤
       throw new Error("Unreachable code");
     }
   } catch (ex) {
@@ -212,7 +207,6 @@ const GetYoutubeInitData = async (url: string): Promise<YoutubeInitData> => {
       throw ex;
     }
     errorHandler.handleError(ex, `Failed to get initialization data - URL: ${url}`, ErrorCodes.INIT_DATA_ERROR);
-    // 這行永遠不會執行，因為 handleError 會拋出錯誤
     throw new Error("Unreachable code");
   }
 };
@@ -222,7 +216,8 @@ const GetYoutubePlayerDetail = async (
 ): Promise<YoutubePlayerDetail> => {
   let initdata: any = {};
   try {
-    const page: AxiosResponse<string> = await axios.get(encodeURI(url));
+    const res = await fetch(encodeURI(url));
+    const page = { data: await res.text() };
     const ytInitData = page.data.split("var ytInitialPlayerResponse =");
     if (ytInitData && ytInitData.length > 1) {
       const data = ytInitData[1].split("</script>")[0].slice(0, -1);
@@ -234,7 +229,7 @@ const GetYoutubePlayerDetail = async (
         `URL: ${url}`,
         ErrorCodes.PLAYER_DATA_ERROR
       );
-      // 這行永遠不會執行，因為 handleError 會拋出錯誤
+
       throw new Error("Unreachable code");
     }
   } catch (ex) {
@@ -242,7 +237,6 @@ const GetYoutubePlayerDetail = async (
       throw ex;
     }
     errorHandler.handleError(ex, `Failed to get player data - URL: ${url}`, ErrorCodes.PLAYER_DATA_ERROR);
-    // 這行永遠不會執行，因為 handleError 會拋出錯誤
     throw new Error("Unreachable code");
   }
 };
@@ -337,7 +331,6 @@ const GetData = async (
       throw ex;
     }
     errorHandler.handleError(ex, `Search failed - keyword: ${keyword}`, ErrorCodes.UNKNOWN_ERROR);
-    // 這行永遠不會執行，因為 handleError 會拋出錯誤
     throw new Error("Unreachable code");
   }
 };
@@ -349,10 +342,9 @@ const nextPage = async (
 ): Promise<SearchResult> => {
   const endpoint = `${youtubeEndpoint}/youtubei/v1/search?key=${nextPage.nextPageToken}`;
   try {
-    const page: AxiosResponse = await axios.post(
-      encodeURI(endpoint),
-      nextPage.nextPageContext
-    );
+    const page: any = await (await (await fetch(
+      encodeURI(endpoint), {method: 'POST', body: JSON.stringify(nextPage.nextPageContext
+    ), headers: {'Content-Type': 'application/json'}})).json());
     const item1 =
       page.data.onResponseReceivedCommands[0].appendContinuationItemsAction;
     let items: SearchItem[] = [];
@@ -392,7 +384,6 @@ const nextPage = async (
       throw ex;
     }
     errorHandler.handleError(ex, `Failed to get next page`, ErrorCodes.UNKNOWN_ERROR);
-    // 這行永遠不會執行，因為 handleError 會拋出錯誤
     throw new Error("Unreachable code");
   }
 };
@@ -423,10 +414,9 @@ const GetPlaylistData = async (
     } else {
       errorHandler.handleError(
         new Error("Invalid playlist"),
-        `播放清單 ID: ${playlistId}`,
+        `ID: ${playlistId}`,
         ErrorCodes.INVALID_PLAYLIST
       );
-      // 這行永遠不會執行，因為 handleError 會拋出錯誤
       throw new Error("Unreachable code");
     }
   } catch (ex) {
@@ -434,7 +424,6 @@ const GetPlaylistData = async (
       throw ex;
     }
     errorHandler.handleError(ex, `Failed to get playlist - ID: ${playlistId}`, ErrorCodes.UNKNOWN_ERROR);
-    // 這行永遠不會執行，因為 handleError 會拋出錯誤
     throw new Error("Unreachable code");
   }
 };
